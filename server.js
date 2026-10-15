@@ -6,10 +6,17 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const express = require('express')
+const fs = require('fs')
 const path = require('path')
 const dns = require('dns').promises
 const crypto = require('crypto')
 const app = express()
+const projectVersion = fs.readFileSync(path.join(__dirname, 'VERSION'), 'utf8').trim()
+
+if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/.test(projectVersion)) {
+    throw new Error(`VERSION must contain a valid semantic version; received "${projectVersion}"`)
+}
+
 const bcrypt = require('bcrypt') // needed to facilitate password hashing
 const passport = require('passport')
 const flash = require('express-flash')
@@ -206,6 +213,7 @@ async function validateEmailDomain(email) {
 app.set('views', path.join(__dirname, 'views'))
 app.set('view engine', 'ejs')
 app.set('trust proxy', 1)
+app.locals.projectVersion = projectVersion
 app.use(express.urlencoded( { extended: false })) // allows us to take the forms in our ejs files and then be able to access them inside of our request variable inside of our POST method
 app.use(session({
     store: new PgSession({

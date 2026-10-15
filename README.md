@@ -8,6 +8,12 @@ The project was built as a full-stack personal software project, with an emphasi
 
 *Live version: https://nexa-next.vercel.app/*
 
+**Current version:** 2.1.1
+
+**Lifecycle stage:** MVP
+
+The root [`VERSION`](VERSION) file is the authoritative source for the project version. See [`CHANGELOG.md`](CHANGELOG.md) for the evidence-backed milestone history.
+
 ---
 
 ## Features
@@ -94,8 +100,8 @@ The project was built as a full-stack personal software project, with an emphasi
 Clone the repository:
 
 ```bash
-git clone https://github.com/spncr1/nexa-v2.git
-cd nexa-v2
+git clone https://github.com/spncr1/nexa.git
+cd nexa
 ```
 
 Install dependencies:
@@ -114,7 +120,7 @@ PGHOST=localhost
 PGPORT=5432
 PGUSER=your_postgres_user
 PGPASSWORD=your_postgres_password
-PGDATABASE=nexa_v1
+PGDATABASE=nexa
 ```
 
 Email verification, password reset, and reminder emails also need SMTP values:

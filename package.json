@@ -1,6 +1,6 @@
 {
-  "name": "nexa-v2",
-  "version": "1.0.0",
+  "name": "nexa",
+  "private": true,
   "description": "A browser-based productivity web app designed to help students manage tasks, assignments, and schedules all in the one place.",
   "main": "index.js",
   "scripts": {

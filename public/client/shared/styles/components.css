@@ -228,7 +228,7 @@ body.dark-mode #theme-switch img:last-child {
     width: 42px;
     height: 42px;
     margin: 0 auto 10px;
-    background: url("/client/shared/assets/Images/nexa-v1.png") center / contain no-repeat;
+    background: url("/client/shared/assets/Images/nexa-logo.png") center / contain no-repeat;
     opacity: 0.34;
 }
 
