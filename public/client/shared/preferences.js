@@ -126,11 +126,16 @@
         if (!get("studyTimerAlerts")) return false;
         if (!("Notification" in window) || Notification.permission !== "granted") return false;
 
-        new Notification(title || "Study session complete", {
-            body: body || "Your study timer has finished.",
-            silent: false
-        });
-        return true;
+        try {
+            new Notification(title || "Study session complete", {
+                body: body || "Your study timer has finished.",
+                silent: false
+            });
+            return true;
+        } catch (error) {
+            console.warn("Could not show study timer notification:", error);
+            return false;
+        }
     }
 
     window.NexaPreferences = {

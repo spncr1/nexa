@@ -103,6 +103,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const SUGGESTION_OVERRIDES_KEY = "studenthub_study_suggestion_overrides";
     const RECENT_LIMIT = 5;
     const STANDALONE_MAX_SECONDS = 4 * 60 * 60;
+    const DEFAULT_PAGE_TITLE = document.title;
     const PRESET_SECONDS = {
         light: [30 * 60, 45 * 60],
         standard: [60 * 60],
@@ -118,6 +119,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     let activeSession = null;
     let lastPlayedTemplate = null;
     let timerId = null;
+    let alertAudioContext = null;
     let detailContext = null;
     let draggedQueueId = null;
     let selectedWeekStart = startOfWeekMonday(new Date());
@@ -212,6 +214,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function saveActiveSession() {
         if (activeSession) {
+            if (activeSession.status === "running" && activeSession.deadlineAt) {
+                activeSession.remainingSeconds = Math.max(0, Math.ceil((activeSession.deadlineAt - Date.now()) / 1000));
+                activeSession.lastTickAt = activeSession.deadlineAt - (activeSession.remainingSeconds * 1000);
+            }
             storage.setItem(ACTIVE_KEY, JSON.stringify(activeSession));
         } else {
             storage.removeItem(ACTIVE_KEY);
@@ -444,7 +450,9 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!normalised) return null;
 
         const totalSeconds = Math.max(1, Number(session.totalSeconds) || normalised.durationSeconds);
-        const remainingSeconds = Math.max(0, Math.min(totalSeconds, Number(session.remainingSeconds) || totalSeconds));
+        const savedRemaining = session.remainingSeconds == null ? NaN : Number(session.remainingSeconds);
+        const remainingSeconds = Math.max(0, Math.min(totalSeconds, Number.isFinite(savedRemaining) ? savedRemaining : totalSeconds));
+        const deadlineAt = Number(session.deadlineAt);
 
         return {
             ...normalised,
@@ -454,7 +462,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             isRepeating: Boolean(session.isRepeating || session.isLooping),
             isStandalone: Boolean(session.isStandalone),
             startedAt: Number(session.startedAt) || Date.now(),
-            lastTickAt: Number(session.lastTickAt) || Date.now()
+            lastTickAt: Number(session.lastTickAt) || Date.now(),
+            deadlineAt: Number.isFinite(deadlineAt) && deadlineAt > 0 ? deadlineAt : null
         };
     }
 
@@ -779,6 +788,51 @@ document.addEventListener("DOMContentLoaded", async () => {
         setTimerDisplay(formatTimerInput(activeSession?.remainingSeconds || 0));
     }
 
+    function updateTimerTitle() {
+        if (!activeSession) {
+            document.title = DEFAULT_PAGE_TITLE;
+            return;
+        }
+        const remaining = Math.max(0, Number(activeSession.remainingSeconds) || 0);
+        const clock = formatTimerInput(remaining);
+        const shortClock = remaining < 3600 ? clock.slice(3) : clock;
+        document.title = `${DEFAULT_PAGE_TITLE} (${shortClock}${activeSession.status === "paused" ? " paused" : ""})`;
+    }
+
+    function prepareCompletionSound() {
+        if (window.NexaPreferences?.get?.("studyTimerAlerts") !== true || alertAudioContext) return;
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return;
+        try {
+            alertAudioContext = new AudioContextClass();
+            if (alertAudioContext.state === "suspended") alertAudioContext.resume().catch(() => {});
+        } catch (error) {
+            console.warn("Could not prepare study timer sound:", error);
+        }
+    }
+
+    function playCompletionSound() {
+        if (window.NexaPreferences?.get?.("studyTimerAlerts") !== true || alertAudioContext?.state !== "running") return;
+        try {
+            const now = alertAudioContext.currentTime;
+            [0, 0.28, 0.56].forEach((delay) => {
+                const oscillator = alertAudioContext.createOscillator();
+                const gain = alertAudioContext.createGain();
+                oscillator.type = "sine";
+                oscillator.frequency.value = 880;
+                gain.gain.setValueAtTime(0, now + delay);
+                gain.gain.linearRampToValueAtTime(0.12, now + delay + 0.015);
+                gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.18);
+                oscillator.connect(gain);
+                gain.connect(alertAudioContext.destination);
+                oscillator.start(now + delay);
+                oscillator.stop(now + delay + 0.19);
+            });
+        } catch (error) {
+            console.warn("Could not play study timer sound:", error);
+        }
+    }
+
     function updateTimerRing() {
         if (!timerRing) return;
         if (!activeSession) {
@@ -795,19 +849,21 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function setTimerRunning(shouldRun) {
-        window.clearInterval(timerId);
-        timerId = null;
-        if (!shouldRun || !activeSession || activeSession.status !== "running") return;
+        if (!shouldRun || !activeSession || activeSession.status !== "running") {
+            window.clearInterval(timerId);
+            timerId = null;
+            return;
+        }
+        if (timerId !== null) return;
         timerId = window.setInterval(tickTimer, 1000);
     }
 
     function tickTimer() {
         if (!activeSession || activeSession.status !== "running") return;
-        activeSession.remainingSeconds = Math.max(0, (Number(activeSession.remainingSeconds) || 0) - 1);
-        activeSession.lastTickAt = Date.now();
-        saveActiveSession();
-        renderCurrentSession();
-
+        activeSession.remainingSeconds = Math.max(0, Math.ceil((activeSession.deadlineAt - Date.now()) / 1000));
+        renderTimer();
+        updateTimerRing();
+        updateTimerTitle();
         if (activeSession.remainingSeconds <= 0) {
             completeActiveSession();
         }
@@ -816,10 +872,11 @@ document.addEventListener("DOMContentLoaded", async () => {
     function reconcileActiveSessionOnLoad() {
         if (!activeSession || activeSession.status !== "running") return;
 
-        const lastTickAt = Number(activeSession.lastTickAt) || Date.now();
-        const elapsedSeconds = Math.max(0, Math.floor((Date.now() - lastTickAt) / 1000));
-        activeSession.remainingSeconds = Math.max(0, (Number(activeSession.remainingSeconds) || 0) - elapsedSeconds);
-        activeSession.lastTickAt = Date.now();
+        if (!activeSession.deadlineAt) {
+            const lastTickAt = Number(activeSession.lastTickAt) || Date.now();
+            activeSession.deadlineAt = lastTickAt + (activeSession.remainingSeconds * 1000);
+        }
+        activeSession.remainingSeconds = Math.max(0, Math.ceil((activeSession.deadlineAt - Date.now()) / 1000));
 
         if (activeSession.remainingSeconds <= 0) {
             completeActiveSession();
@@ -845,6 +902,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (sessionState) sessionState.textContent = "";
         if (sessionStatusDot) sessionStatusDot.classList.add("is-idle");
         if (timerRemainingLabel) timerRemainingLabel.classList.add("is-hidden");
+        updateTimerTitle();
         updateTimerRing();
         renderTimerPreview();
     }
@@ -881,6 +939,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (timerRemainingLabel) timerRemainingLabel.classList.remove("is-hidden");
         renderTimer();
         updateTimerRing();
+        updateTimerTitle();
         setTimerRunning(activeSession.status === "running");
     }
 
@@ -1720,6 +1779,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         const seconds = getSessionSeconds(template);
         if (!template || !seconds) return;
         const shouldRepeat = options.keepRepeat ? Boolean(activeSession?.isRepeating || activeSession?.isLooping) : Boolean(options.repeat);
+        const startedAt = Date.now();
         activeSession = {
             id: createId("study_run"),
             title: template.title || "Timer",
@@ -1732,8 +1792,9 @@ document.addEventListener("DOMContentLoaded", async () => {
             status: "running",
             isRepeating: shouldRepeat,
             isStandalone: Boolean(template.isStandalone),
-            startedAt: Date.now(),
-            lastTickAt: Date.now()
+            startedAt,
+            lastTickAt: startedAt,
+            deadlineAt: startedAt + (seconds * 1000)
         };
         lastPlayedTemplate = getTemplateFromSession(activeSession);
         saveActiveSession();
@@ -1790,7 +1851,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             id: createId("study_completed"),
             runId: activeSession.id,
             startedAt: activeSession.startedAt,
-            completedAt: Date.now(),
+            completedAt: activeSession.deadlineAt || Date.now(),
             createdAt: Date.now()
         };
         completedSessions.unshift(completed);
@@ -1804,22 +1865,21 @@ document.addEventListener("DOMContentLoaded", async () => {
         } else {
             renderAll();
         }
-        if (!(await confirmStudySaved("Could not save completed session right now."))) return;
-
         const timerAlertsOn = window.NexaPreferences?.get?.("studyTimerAlerts") === true;
+        if (timerAlertsOn) {
+            playCompletionSound();
+            window.NexaPreferences?.notifyStudyTimerComplete?.(
+                copy("study.notification.completeTitle", "Study session complete"),
+                copy("study.notification.completeBody", "Your study timer has finished.")
+            );
+        }
+        if (!(await confirmStudySaved("Could not save completed session right now."))) return;
         showToast(
             timerAlertsOn
                 ? copy("study.toast.timerAlert", "Study timer finished. Session saved to history.")
                 : copy("study.toast.sessionCompleted", "Session completed."),
             "positive"
         );
-
-        if (timerAlertsOn) {
-            window.NexaPreferences?.notifyStudyTimerComplete?.(
-                copy("study.notification.completeTitle", "Study session complete"),
-                copy("study.notification.completeBody", "Your study timer has finished.")
-            );
-        }
     }
 
     async function previousSession() {
@@ -1843,7 +1903,15 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     function togglePause() {
         if (!activeSession) return;
-        activeSession.status = activeSession.status === "paused" ? "running" : "paused";
+        if (activeSession.status === "running") {
+            tickTimer();
+            if (!activeSession) return;
+            activeSession.status = "paused";
+            activeSession.deadlineAt = null;
+        } else {
+            activeSession.status = "running";
+            activeSession.deadlineAt = Date.now() + (activeSession.remainingSeconds * 1000);
+        }
         activeSession.lastTickAt = Date.now();
         saveActiveSession();
         renderAll();
@@ -2286,6 +2354,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     window.addEventListener("nexa:app-data-reset", handleAppDataReset);
+    document.addEventListener("click", prepareCompletionSound);
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) tickTimer();
+    });
+    window.addEventListener("focus", tickTimer);
+    window.addEventListener("pageshow", tickTimer);
     window.NexaPreferences?.onChange?.((prefs, changedKey) => {
         if (changedKey === "appTone") {
             renderAll();
