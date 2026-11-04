@@ -194,12 +194,24 @@
                     <section class="settings-preference-section" aria-labelledby="notifications-preferences-title">
                         <h4 id="notifications-preferences-title" class="settings-preference-heading">Notifications</h4>
 
-                        <div class="setting-row">
+                        <div class="setting-row setting-row-toggle">
                             <div>
                                 <div class="setting-labels">Study timer alerts</div>
-                                <div class="setting-desc">Play a completion sound and show a browser notification when permitted.</div>
+                                <div class="setting-desc">Play a completion sound and show a browser notification when permitted. On mobile, keep Nexa open for the sound.</div>
                             </div>
                             <label class="settings-toggle"><input type="checkbox" data-system-pref="studyTimerAlerts"><span></span></label>
+                        </div>
+
+                        <div class="setting-row">
+                            <div>
+                                <label class="setting-labels" for="study-timer-sound-volume">Timer sound volume</label>
+                                <div class="setting-desc">Choose how loud the three-round alert should be.</div>
+                            </div>
+                            <select class="setting-account-input settings-select-compact" id="study-timer-sound-volume" data-system-pref="studyTimerSoundVolume">
+                                <option value="soft">Soft</option>
+                                <option value="normal">Normal</option>
+                                <option value="loud">Loud</option>
+                            </select>
                         </div>
 
                         <div class="setting-row">
@@ -234,7 +246,7 @@
                     <section class="settings-preference-section" aria-labelledby="privacy-preferences-title">
                         <h4 id="privacy-preferences-title" class="settings-preference-heading">Privacy</h4>
 
-                        <div class="setting-row">
+                        <div class="setting-row setting-row-toggle">
                             <div>
                                 <div class="setting-labels">Personalisation</div>
                                 <div class="setting-desc">Remember layout and navigation preferences.</div>

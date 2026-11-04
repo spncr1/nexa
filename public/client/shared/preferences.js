@@ -4,9 +4,12 @@
     const NAV_GROUPS_KEY = "studenthub_nav_group_state";
     const HOME_TASK_SORT_KEY = "taskSortMode";
     const UPDATE_EVENT = "nexa:system-preferences-updated";
+    const STUDY_TIMER_SOUND_LEVELS = Object.freeze({ soft: 0.12, normal: 0.24, loud: 0.36 });
+    let studyTimerAudioContext = null;
 
     const DEFAULTS = Object.freeze({
         studyTimerAlerts: false,
+        studyTimerSoundVolume: "normal",
         deadlineReminderLevel: "important",
         appTone: "encouraging",
         personalisation: true,
@@ -14,6 +17,7 @@
     });
 
     const ALLOWED_VALUES = Object.freeze({
+        studyTimerSoundVolume: new Set(Object.keys(STUDY_TIMER_SOUND_LEVELS)),
         deadlineReminderLevel: new Set(["important", "all", "off"]),
         appTone: new Set(["encouraging", "neutral", "direct"]),
         emailReminders: new Set(["off", "important", "weekly"])
@@ -122,6 +126,56 @@
         return Notification.requestPermission();
     }
 
+    async function prepareStudyTimerSound() {
+        if (!get("studyTimerAlerts")) return false;
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) return false;
+
+        try {
+            if (!studyTimerAudioContext || studyTimerAudioContext.state === "closed") {
+                studyTimerAudioContext = new AudioContextClass();
+            }
+            if (studyTimerAudioContext.state !== "running") {
+                await studyTimerAudioContext.resume();
+            }
+            return studyTimerAudioContext.state === "running";
+        } catch (error) {
+            console.warn("Could not prepare study timer sound:", error);
+            return false;
+        }
+    }
+
+    async function playStudyTimerSound() {
+        if (!get("studyTimerAlerts")) return false;
+        if (!(await prepareStudyTimerSound())) return false;
+
+        try {
+            const context = studyTimerAudioContext;
+            const volume = STUDY_TIMER_SOUND_LEVELS[get("studyTimerSoundVolume")];
+            const start = context.currentTime + 0.02;
+            for (let round = 0; round < 3; round += 1) {
+                [0, 0.24].forEach((offset, note) => {
+                    const oscillator = context.createOscillator();
+                    const gain = context.createGain();
+                    const noteStart = start + (round * 1.15) + offset;
+                    oscillator.type = "triangle";
+                    oscillator.frequency.value = note === 0 ? 784 : 1047;
+                    gain.gain.setValueAtTime(0.001, noteStart);
+                    gain.gain.exponentialRampToValueAtTime(volume, noteStart + 0.02);
+                    gain.gain.exponentialRampToValueAtTime(0.001, noteStart + 0.2);
+                    oscillator.connect(gain);
+                    gain.connect(context.destination);
+                    oscillator.start(noteStart);
+                    oscillator.stop(noteStart + 0.21);
+                });
+            }
+            return true;
+        } catch (error) {
+            console.warn("Could not play study timer sound:", error);
+            return false;
+        }
+    }
+
     function notifyStudyTimerComplete(title, body) {
         if (!get("studyTimerAlerts")) return false;
         if (!("Notification" in window) || Notification.permission !== "granted") return false;
@@ -138,6 +192,10 @@
         }
     }
 
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) prepareStudyTimerSound();
+    });
+
     window.NexaPreferences = {
         DEFAULTS,
         UPDATE_EVENT,
@@ -150,6 +208,8 @@
         allowsPersonalisation,
         clearPersonalisedUiState,
         requestStudyTimerNotificationPermission,
+        prepareStudyTimerSound,
+        playStudyTimerSound,
         notifyStudyTimerComplete
     };
 })();

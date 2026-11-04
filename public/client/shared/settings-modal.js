@@ -426,8 +426,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             const permission = await window.NexaPreferences?.requestStudyTimerNotificationPermission?.();
             if (permission !== "granted") {
                 const message = permission === "unsupported"
-                    ? "Browser notifications are not supported here. Timer alerts are saved in Nexa."
-                    : "Browser notifications are blocked. Timer alerts are saved in Nexa.";
+                    ? "Browser notifications are unavailable here. The timer sound can still play while Nexa is active."
+                    : "Browser notifications are blocked. The timer sound can still play while Nexa is active.";
                 showToast(message, "neutral");
             }
         }

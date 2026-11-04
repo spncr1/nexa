@@ -1260,6 +1260,8 @@ body.settings-modal-open .settings-navbar-icon-hover {
 
 .settings-preference-section {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-width: 0;
     gap: 8px;
     margin: 0 18px 0 0;
     padding: 14px 0 12px;
@@ -1283,6 +1285,21 @@ body.settings-modal-open .settings-navbar-icon-hover {
 
 #system-settings-modal .settings-panel[data-panel="preferences"] .setting-row {
     margin-top: 6px;
+}
+
+#system-settings-modal .settings-panel[data-panel="preferences"] .setting-row-toggle {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px;
+    align-items: center;
+    min-width: 0;
+}
+
+#system-settings-modal .settings-panel[data-panel="preferences"] .setting-row-toggle .settings-toggle {
+    width: 48px;
+    min-width: 48px;
+    height: 28px;
+    margin: 0;
+    justify-self: end;
 }
 
 .settings-preference-status {
@@ -1730,6 +1747,16 @@ body.settings-modal-open .settings-navbar-icon-hover {
         flex: 0 0 auto;
     }
 
+    #system-settings-modal .settings-panel[data-panel="preferences"] .setting-row-toggle {
+        grid-template-columns: minmax(0, 1fr) 2.65rem;
+    }
+
+    #system-settings-modal .settings-panel[data-panel="preferences"] .setting-row-toggle .settings-toggle {
+        width: 2.65rem;
+        min-width: 2.65rem;
+        height: 1.5rem;
+    }
+
     #system-settings-modal .settings-toggle span::before {
         width: 1.14rem;
         height: 1.14rem;
@@ -2136,6 +2163,10 @@ body.settings-modal-open .settings-navbar-icon-hover {
     #system-settings-modal .settings-panel[data-panel="preferences"] .setting-row,
     #system-settings-modal .settings-panel[data-panel="appearance"] .setting-row {
         grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    #system-settings-modal .settings-panel[data-panel="preferences"] .setting-row-toggle {
+        grid-template-columns: minmax(0, 1fr) 2.65rem;
     }
 
     #system-settings-modal .settings-panel[data-panel="preferences"] .setting-row > div,

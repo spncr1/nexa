@@ -30,15 +30,6 @@ body.dark-mode.settings-modal-open .settings-navbar-button:focus-visible {
     opacity: 0.7;
 }
 
-body.dark-mode .settings-toggle span::before {
-    left: 3px;
-    top: 3px;
-}
-
-body.dark-mode .settings-toggle input:checked + span::before {
-    transform: translateX(20px);
-}
-
 body.dark-mode input[type="time"],
 body.dark-mode input[type="date"] {
     color-scheme: dark;

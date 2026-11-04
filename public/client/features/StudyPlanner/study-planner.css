@@ -1013,6 +1013,23 @@ body.dark-mode .study-planner-page .timer-control.is-repeat {
     outline: none;
 }
 
+.history-more-btn {
+    width: 100%;
+    min-height: 36px;
+    border: 1px solid var(--study-inner-surface-border);
+    border-radius: 7px;
+    background: var(--study-inner-surface-bg);
+    color: var(--color-accent-primary);
+    font: inherit;
+    cursor: pointer;
+}
+
+.history-more-btn:hover,
+.history-more-btn:focus-visible {
+    border-color: var(--color-border-active);
+    outline: none;
+}
+
 .suggested-focuses {
     align-self: stretch;
     display: flex;

@@ -102,6 +102,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const MONTHLY_GOAL_KEY = "studenthub_study_monthly_goal";
     const SUGGESTION_OVERRIDES_KEY = "studenthub_study_suggestion_overrides";
     const RECENT_LIMIT = 5;
+    const HISTORY_PAGE_SIZE = 20;
     const STANDALONE_MAX_SECONDS = 4 * 60 * 60;
     const DEFAULT_PAGE_TITLE = document.title;
     const PRESET_SECONDS = {
@@ -119,7 +120,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     let activeSession = null;
     let lastPlayedTemplate = null;
     let timerId = null;
-    let alertAudioContext = null;
+    let visibleHistoryCount = HISTORY_PAGE_SIZE;
     let detailContext = null;
     let draggedQueueId = null;
     let selectedWeekStart = startOfWeekMonday(new Date());
@@ -800,37 +801,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     function prepareCompletionSound() {
-        if (window.NexaPreferences?.get?.("studyTimerAlerts") !== true || alertAudioContext) return;
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextClass) return;
-        try {
-            alertAudioContext = new AudioContextClass();
-            if (alertAudioContext.state === "suspended") alertAudioContext.resume().catch(() => {});
-        } catch (error) {
-            console.warn("Could not prepare study timer sound:", error);
-        }
-    }
-
-    function playCompletionSound() {
-        if (window.NexaPreferences?.get?.("studyTimerAlerts") !== true || alertAudioContext?.state !== "running") return;
-        try {
-            const now = alertAudioContext.currentTime;
-            [0, 0.28, 0.56].forEach((delay) => {
-                const oscillator = alertAudioContext.createOscillator();
-                const gain = alertAudioContext.createGain();
-                oscillator.type = "sine";
-                oscillator.frequency.value = 880;
-                gain.gain.setValueAtTime(0, now + delay);
-                gain.gain.linearRampToValueAtTime(0.12, now + delay + 0.015);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.18);
-                oscillator.connect(gain);
-                gain.connect(alertAudioContext.destination);
-                oscillator.start(now + delay);
-                oscillator.stop(now + delay + 0.19);
-            });
-        } catch (error) {
-            console.warn("Could not play study timer sound:", error);
-        }
+        window.NexaPreferences?.prepareStudyTimerSound?.();
     }
 
     function updateTimerRing() {
@@ -1080,6 +1051,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     function renderPanel(panelName, sessions, emptyText) {
         const panel = document.querySelector(`.history-panel[data-panel="${panelName}"]`);
         if (!panel) return;
+        const previousScrollTop = panel.scrollTop;
         panel.innerHTML = "";
         if (!sessions.length) {
             const empty = document.createElement("p");
@@ -1092,11 +1064,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         sessions.forEach((session) => {
             panel.appendChild(createHistoryCard(session, panelName));
         });
+        panel.scrollTop = previousScrollTop;
     }
 
     function renderHistoryPanels() {
         renderPanel("recent", completedSessions.slice(0, RECENT_LIMIT), copy("study.empty.recent", "No recent study sessions yet."));
-        renderPanel("history", completedSessions, copy("study.empty.history", "Your completed sessions will appear here."));
+        renderPanel("history", completedSessions.slice(0, visibleHistoryCount), copy("study.empty.history", "Your completed sessions will appear here."));
+        if (completedSessions.length > visibleHistoryCount) {
+            const panel = document.querySelector('.history-panel[data-panel="history"]');
+            const moreButton = document.createElement("button");
+            moreButton.type = "button";
+            moreButton.className = "history-more-btn";
+            moreButton.textContent = `Show ${Math.min(HISTORY_PAGE_SIZE, completedSessions.length - visibleHistoryCount)} more of ${completedSessions.length} sessions`;
+            panel?.appendChild(moreButton);
+        }
         renderPanel("favourites", favouriteSessions, copy("study.empty.favourites", "No saved sessions yet."));
     }
 
@@ -1357,6 +1338,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     function handleAppDataReset() {
         queue = [];
         completedSessions = [];
+        visibleHistoryCount = HISTORY_PAGE_SIZE;
         favouriteSessions = [];
         suggestionOverrides = {};
         activeSession = null;
@@ -1633,7 +1615,7 @@ document.addEventListener("DOMContentLoaded", async () => {
             if ("readOnly" in field) field.readOnly = isCompletedRecord;
         });
         if (saveDetailBtn) saveDetailBtn.classList.toggle("hidden", isCompletedRecord);
-        if (deleteDetailBtn) deleteDetailBtn.classList.toggle("hidden", isCompletedRecord || isSuggestion);
+        if (deleteDetailBtn) deleteDetailBtn.classList.toggle("hidden", isSuggestion);
         if (favouriteDetailBtn) {
             favouriteDetailBtn.classList.toggle("hidden", isSuggestion);
             favouriteDetailBtn.querySelector(".ui-btn-label").textContent = isFavourite(session) ? "Unfavourite" : "Favourite";
@@ -1730,14 +1712,34 @@ document.addEventListener("DOMContentLoaded", async () => {
     async function deleteDetailSession() {
         if (!detailContext) return;
         const { source, id } = detailContext;
-        if (source === "queue") {
+        const isCompletedRecord = source === "recent" || source === "history" || source === "completed";
+        if (isCompletedRecord) {
+            const confirmed = await confirmAction({
+                title: "Delete completed session?",
+                message: "This session will be removed from your history and study totals. This cannot be undone.",
+                cancelLabel: "Keep Session",
+                confirmLabel: "Delete Session",
+                tone: "negative"
+            });
+            if (!confirmed) return;
+            const previousCompleted = completedSessions;
+            completedSessions = completedSessions.filter((session) => session.id !== id);
+            if (previousCompleted.length === completedSessions.length) return;
+            persistCompleted();
+            if (!(await confirmStudySaved("Could not delete session right now.", detailStatusText))) {
+                completedSessions = previousCompleted;
+                return;
+            }
+        } else if (source === "queue") {
             queue = queue.filter((session) => session.id !== id);
             persistQueue();
         } else if (source === "favourites") {
             favouriteSessions = favouriteSessions.filter((session) => session.id !== id);
             persistFavourites();
+        } else {
+            return;
         }
-        if (!(await confirmStudySaved("Could not delete session right now.", detailStatusText))) return;
+        if (!isCompletedRecord && !(await confirmStudySaved("Could not delete session right now.", detailStatusText))) return;
 
         closeModals();
         renderAll();
@@ -1867,7 +1869,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         }
         const timerAlertsOn = window.NexaPreferences?.get?.("studyTimerAlerts") === true;
         if (timerAlertsOn) {
-            playCompletionSound();
+            window.NexaPreferences?.playStudyTimerSound?.();
             window.NexaPreferences?.notifyStudyTimerComplete?.(
                 copy("study.notification.completeTitle", "Study session complete"),
                 copy("study.notification.completeBody", "Your study timer has finished.")
@@ -2247,6 +2249,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     queueList?.addEventListener("pointerdown", startQueueDrag);
 
     document.querySelector(".session-history")?.addEventListener("click", (event) => {
+        if (event.target.closest(".history-more-btn")) {
+            const previousCount = visibleHistoryCount;
+            visibleHistoryCount += HISTORY_PAGE_SIZE;
+            renderHistoryPanels();
+            document.querySelectorAll('.history-panel[data-panel="history"] .history-row')[previousCount]?.focus();
+            return;
+        }
         const row = event.target.closest(".history-row");
         if (!row) return;
         const source = row.dataset.source;
